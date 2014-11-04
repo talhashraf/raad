@@ -1,13 +1,16 @@
 package com.talhashraf.raad.store;
 
-import java.util.List;
+
 import java.util.Map;
+import java.util.List;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.ArrayList;
 
-import java.lang.reflect.Field;
+import java.lang.Class;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import android.os.AsyncTask;
 import android.app.Activity;
@@ -21,46 +24,15 @@ import com.talhashraf.raad.interfaces.StoreEventInterface;
 
 public class Store extends AsyncTask<Void, Void, String> {
 	private String url;
-	private Model model;
-	private int resource;
-	private int[] pattern;
-	private String[] fields;
-	private Activity activity;
+	private String[] from;
+	private Class modelClass;
 	private String rootProperty;
 	private List<Model> collection;
 	private List<StoreEventInterface> listeners;
 
-	public Store(Activity activity, Model model, String url, String rootProperty) {
+	public Store(Class modelClass, String url, String rootProperty) {
 		this.url = url;
-		this.model = model;
-		this.activity = activity;
-		this.rootProperty = rootProperty;
-		this.fields = this.model.getAllFields();
-		this.collection = new ArrayList<Model>();
-		this.listeners = new ArrayList<StoreEventInterface>();
-		this.resource = android.R.layout.simple_list_item_2;
-		this.pattern = new int[] {android.R.id.text1, android.R.id.text2};
-	}
-
-	public Store(Activity activity, Model model, String url, String rootProperty, String[] fields) {
-		this.url = url;
-		this.model = model;
-		this.fields = fields;
-		this.activity = activity;
-		this.rootProperty = rootProperty;
-		this.collection = new ArrayList<Model>();
-		this.listeners = new ArrayList<StoreEventInterface>();
-		this.resource = android.R.layout.simple_list_item_2;
-		this.pattern = new int[] {android.R.id.text1, android.R.id.text2};
-	}
-
-	public Store(Activity activity, Model model, String url, String rootProperty, int resource, String[] fields, int[] pattern) {
-		this.url = url;
-		this.model = model;
-		this.fields = fields;
-		this.pattern = pattern;
-		this.resource = resource;
-		this.activity = activity;
+		this.modelClass = modelClass;
 		this.rootProperty = rootProperty;
 		this.collection = new ArrayList<Model>();
 		this.listeners = new ArrayList<StoreEventInterface>();
@@ -82,17 +54,18 @@ public class Store extends AsyncTask<Void, Void, String> {
 	}
 
 	public void onLoad(String result) {
-		Field[] fields = this.model.getClass().getDeclaredFields();
-		JSONArray data = this.getData(result, this.rootProperty);
+		JSONArray data = this.getJSONData(result, this.rootProperty);
 		for (int i = 0; i < data.length(); i++) {
-			for (Field field : fields) {
-				String field_name = field.getName();
-				try {
-					this.model.set(field_name,
-									data.getJSONObject(i).getString(field_name));
-				} catch (Exception e) {}
-			}
-			this.collection.add(this.model);
+			try {
+				Model model = (Model) this.modelClass.newInstance();
+				JSONObject json_object = data.getJSONObject(i);
+				Iterator keys = json_object.keys();
+				while(keys.hasNext()) {
+					String key = (String) keys.next();
+					model.set(key, json_object.getString(key));
+				}
+				this.collection.add(model);
+			} catch (Exception e) {}
 		}
 
 		for (StoreEventInterface listener : this.listeners) {
@@ -100,25 +73,40 @@ public class Store extends AsyncTask<Void, Void, String> {
 		}
 	}
 
-	public SimpleAdapter getAdapter() {
-		Field[] fields = this.model.getClass().getDeclaredFields();
-        List<Map<String, String>> list = new ArrayList<Map<String, String>>();
+	public List<Map<String, String>> getData() {
+		List<Map<String, String>> list = new ArrayList<Map<String, String>>();
         for (Model model : this.collection) {
+        	this.from = model.getAllFields();
         	Map<String, String> map = new HashMap<String, String>();
-        	for (Field field : fields) {
-        		String field_name = field.getName();
-	        	map.put(field_name, model.get(field_name));
+        	for (String field : this.from) {
+	        	map.put(field, model.get(field));
 	        }
 	        list.add(map);
 	    }
-        return new SimpleAdapter(this.activity,
-								list,
-                    		    this.resource,
-                        	    this.fields,
-                            	this.pattern);
+	    return list;
 	}
 
-	public JSONArray getData(String result, String rootProperty) {
+	public SimpleAdapter getAdapter(Activity activity) {
+        return new SimpleAdapter(activity,
+								getData(),
+                    		    android.R.layout.simple_list_item_2,
+                        	    this.from,
+                            	new int[] {android.R.id.text1, android.R.id.text2});
+	}
+
+	public SimpleAdapter getAdapter(Activity activity, String[] from) {
+        return new SimpleAdapter(activity,
+								getData(),
+                    		    android.R.layout.simple_list_item_2,
+                        	    from,
+                            	new int[] {android.R.id.text1, android.R.id.text2});
+	}
+
+	public SimpleAdapter getAdapter(Activity activity, int resource, String[] from, int[] to) {
+        return new SimpleAdapter(activity, getData(), resource, from, to);
+	}
+
+	public JSONArray getJSONData(String result, String rootProperty) {
 		if (rootProperty != "") {
 			return JSONReader.getJSONArray(result, rootProperty);
 		}
